@@ -1,0 +1,95 @@
+name: Android CI Build
+
+on:
+  push:
+    branches: [ "*" ] # Triggers build on push to any branch
+    tags:
+      - "v*" # Triggers build on tags matching v* (e.g., v1.0.0, v1.1.0)
+  pull_request:
+    branches: [ "*" ] # Triggers build on any pull request
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions UI
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17' # Matches JVM toolchain version for modern Android
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
+
+      - name: Fix Gradle Wrapper JAR
+        run: |
+          echo "Restoring official standard gradle-wrapper.jar to resolve potential transport corruption..."
+          curl -Lo gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v9.3.1/gradle/wrapper/gradle-wrapper.jar
+
+      - name: Decode Debug & Release Keystores
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            echo "Reconstructed debug.keystore from repository base64 key."
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            echo "Warning: No debug.keystore.base64 found."
+          fi
+          if [ -f "release.keystore.base64" ]; then
+            echo "Reconstructed release.keystore from repository base64 key."
+            base64 -d release.keystore.base64 > release.keystore
+          else
+            echo "Warning: No release.keystore.base64 found. Will fallback to debug signing."
+          fi
+
+      - name: Initialize Environment Secrets
+        run: |
+          if [ -f ".env.example" ] && [ ! -f ".env" ]; then
+            echo "Initializing .env file from .env.example..."
+            cp .env.example .env
+          fi
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug & Release APKs
+        run: ./gradlew assembleDebug assembleRelease
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 7
+
+      - name: Create GitHub Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && format('Release {0}', github.ref_name) || format('Release v1.0.{0}', github.run_number) }}
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

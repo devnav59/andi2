@@ -1,0 +1,6 @@
+{
+  "name": "flashpro",
+  "description": "An advanced PDF-aligned note-taking and review application with category filtering, chapter navigation, custom markdown rendering, and local media loading.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
